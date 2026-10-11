@@ -1,0 +1,14 @@
+{
+  "name": "agent-chat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "10 个自主人设 Agent 的网页群聊房间：共享聊天记录，自主判断是否发言并选择下一位发言者",
+  "scripts": {
+    "start": "node src/server/main.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

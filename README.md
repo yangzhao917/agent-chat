@@ -1,0 +1,84 @@
+# 多 Agent 群聊房间
+
+10 个不同人设的 Agent 在一个网页聊天室里共享同一份聊天记录，互相对话。
+每条新消息后，每个 Agent **自主判断**是否想接话；上一位发言者可以**提名**下一位发言者，
+提名优先，否则按发言意愿加权随机。人类（主持人）可随时插话。
+
+- 设计基线（目标/范围/边界/验收标准）：[docs/plan.md](docs/plan.md)
+- 技术形态：零依赖 Node.js（ESM）+ 原生 `node:test`；OpenAI 兼容 LLM 接口；SSE 推送；JSONL 持久化。
+
+## 快速开始
+
+```bash
+# 1. 配置（均可选，默认值面向本机已配置的 StepFun 接口）
+cp .env.example .env
+
+# 2. 启动
+npm start
+# 打开 http://localhost:3210
+
+# 3. 测试
+npm test
+```
+
+### 配置项
+
+| 环境变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `PORT` | `3210` | HTTP 端口 |
+| `LLM_BASE_URL` | `https://api.stepfun.com/step_plan/v1` | OpenAI 兼容接口地址 |
+| `LLM_API_KEY` | 取 `STEP_API_KEY` | API Key |
+| `LLM_MODEL` | `step-5-preview` | 发言模型 |
+| `LLM_DECISION_MODEL` | `step-3.5-flash` | 决策模型（轻量、低温） |
+| `LLM_SPEAK_MAX_TOKENS` / `LLM_DECISION_MAX_TOKENS` | `3000` / `2000` | **推理模型的推理 token 也占配额，改小会导致 content 为空** |
+| `LLM_MAX_CONCURRENCY` | `6` | 上游并发上限（StepFun 为 8，留余量防 429） |
+| `MAX_AGENT_MESSAGES_PER_TURN` | `12` | 每轮 Agent 消息预算 |
+| `URGE_THRESHOLD` | `4` | urge 低于该值视为不想发言 |
+| `MAX_HISTORY` / `DECISION_HISTORY` | `30` / `16` | 发言/决策时下发的历史窗口 |
+| `MESSAGE_DELAY_MS` | `900` | 两条 Agent 消息间的节奏间隔 |
+| `DATA_DIR` | `./data` | JSONL 持久化目录 |
+
+## 架构
+
+```
+src/
+  domain/     领域规则（不依赖框架/LLM/UI）
+    personas.js   10 个人设（性格、风格、关注领域、禁忌）
+    room.js       聊天室聚合：共享历史、"谁能发言"的不变量
+    speaking.js   决策解析、下一位发言者选择（纯函数，随机源可注入）
+    prompt.js     人设→提示词、输出协议
+  llm/        OpenAI 兼容客户端（并发闸门、重试、退避）
+  app/        用例编排：回合循环、插话检查点、失败降级、事件流
+  server/     HTTP + SSE + 静态页（只做协议转换）
+  store/      JSONL 追加式持久化
+```
+
+分层原则：领域层不知道 LLM 的存在，LLM 层不知道房间，server 只做协议转换。
+测试用假 LLM 驱动完整回合，不发真实请求。
+
+## 发言调度规则
+
+1. 人类消息或"自由讨论"开启一轮，预算 `MAX_AGENT_MESSAGES_PER_TURN` 条。
+2. 每轮迭代：对所有候选 Agent 并行发起"是否想接话"的轻量决策（want + urge 0-10 + 理由）。
+   候选 = 排除上一句发言人（禁止连庄）、排除本轮已达发言上限者。
+3. 选中顺序：**上一位发言者的有效提名 > 意愿加权随机（权重 urge²）> 无人则本轮结束**。
+4. 人类插话是检查点：回合在下一次决策前消费该消息，重置预算，Agent 基于新上下文重新评估。
+5. 失败降级：单个决策失败 → 该 Agent 本轮沉默；发言失败 → 跳过并占额度，连续 3 次失败才中止本轮。
+
+## 验收步骤
+
+```bash
+npm test                      # 48 项单元/编排测试
+npm start                     # 启动后在浏览器操作：
+```
+
+1. 页面展示 10 位成员；输入框发送消息后，Agent 自主接话，发言内容呼应此前的共享历史。
+2. 观察一轮自主对话：无同一 Agent 连续发言；每轮 Agent 消息数不超过预算；无人想发言时状态回到"待机"而非空转。
+3. 点击"暂停"后调度停止，"继续"后恢复。
+4. 杀掉进程重启，历史消息从 `data/rooms/main.jsonl` 恢复（启动日志打印"已恢复 N 条历史消息"）。
+
+## 已知边界
+
+- 单房间、无用户系统；上下文是"最近 N 条"滑动窗口，不做长期记忆检索。
+- 推理模型下单条约 15-25 秒（10 路排队决策 + 生成），属预期成本。
+- Agent 输出的 `@提名` 只接受名册内名字，其余忽略（防提示词注入）。
