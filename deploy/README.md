@@ -45,7 +45,22 @@ sudo nginx -t && sudo systemctl reload nginx
 > 反代模板里 `proxy_buffering off` 和放长的读超时是必须的：这个应用靠 SSE 推送实时消息，
 > nginx 默认开缓冲会把事件攒着不下发，前端就"卡住不动"。
 
-## 四、验证
+## 四、开启 HTTPS
+
+反代默认只听 80。要 https 访问，先确认域名 A 记录已指向服务器公网 IP，然后：
+
+```bash
+sudo bash /opt/app/agent-chat/deploy/enable-ssl.sh chat.yangzhao.tech
+```
+
+脚本会校验解析是否正确（不指向本机会直接报错退出，避免白等一轮），再用 certbot
+申请证书、写入 Nginx 配置并加上 80 → 443 跳转。
+
+> 踩过的坑：`chat.yangzhao.tech` 曾把 A 记录写成 `124.122.151.130`，而服务器是
+> `124.222.151.130`，第二个八位段少写一个 2，域名指向了别的机器，表现为"无法访问"。
+> 遇到打不开先查解析：`dig +short <域名>` 与服务器公网 IP 是否一致。
+
+## 五、验证
 
 ```bash
 systemctl status agent-chat          # 服务状态
@@ -55,7 +70,7 @@ curl -s http://127.0.0.1:3000/api/state | head -c 200
 
 浏览器打开 `http://<服务器公网IP>:3000`，应看到「围炉夜话」房间和 10 位成员。
 
-## 五、以后更新
+## 六、以后更新
 
 > 如果服务器访问不了 `github.com`（国内常见，但 `raw.githubusercontent.com` 往往通），
 > 用 scp 传包代替 git：
@@ -80,7 +95,7 @@ curl -s http://127.0.0.1:3000/api/state | head -c 200
 LLM_API_KEY=<KEY> bash <(curl -fsSL https://raw.githubusercontent.com/yangzhao917/agent-chat/main/deploy/install.sh)
 ```
 
-## 六、常用运维命令
+## 七、常用运维命令
 
 | 目的 | 命令 |
 | --- | --- |
@@ -91,7 +106,7 @@ LLM_API_KEY=<KEY> bash <(curl -fsSL https://raw.githubusercontent.com/yangzhao91
 | 改配置 | 编辑 `/opt/app/agent-chat/.env` 后 `systemctl restart agent-chat` |
 | 备份聊天记录 | 拷贝 `/opt/app/agent-chat/data/rooms/main.jsonl` |
 
-## 七、换端口
+## 八、换端口
 
 默认 `3000`。改端口要同时改两处，否则安全组放了但服务没监听：
 
@@ -102,7 +117,7 @@ systemctl restart agent-chat
 
 别忘了在腾讯云安全组里放行同一个端口。
 
-## 八、注意事项
+## 九、注意事项
 
 - 服务以 `root` 运行（`/opt` 需要权限）。若要降权，把 `agent-chat.service` 里的
   `User=` 打开并提前 `chown -R` 应用目录。
