@@ -9,10 +9,20 @@ EMAIL="${EMAIL:-admin@${DOMAIN#*.}}"
 
 echo "==> 先确认域名解析是否已指向本机"
 RESOLVED=$(getent hosts "$DOMAIN" | awk '{print $1}' | head -1)
-MINE=$(curl -s --max-time 8 https://api.ipify.org || hostname -I | awk '{print $1}')
-echo "    域名解析到: ${RESOLVED:-无}   本机公网 IP: ${MINE}"
-if [ "$RESOLVED" != "$MINE" ]; then
-  echo "!! 域名没有解析到本机，Let's Encrypt 校验会失败。请先修正 DNS A 记录。" >&2
+if [ -z "$RESOLVED" ]; then
+  echo "!! 域名无法解析，Let's Encrypt 校验会失败。请先修正 DNS A 记录。" >&2
+  exit 1
+fi
+# 腾讯云等云厂商的公网 IP 是 NAT 映射到私网的，服务器上看不到自己的公网 IP，
+# 所以不能直接和"本机 IP"比对；改为验证该地址上跑的是不是本应用。
+LOCAL_IPS=" $(hostname -I 2>/dev/null) $(ip -4 addr show 2>/dev/null | grep -oP 'inet \K[\d.]+' | tr '\n' ' ') "
+if echo "$LOCAL_IPS" | grep -q " $RESOLVED "; then
+  echo "    域名解析到本机地址 $RESOLVED"
+elif curl -s --max-time 10 -H "Host: $DOMAIN" "http://$RESOLVED/api/state" | grep -q '"id":"main"'; then
+  echo "    域名解析到 $RESOLVED（NAT 公网 IP），该地址上正在运行本应用"
+else
+  echo "!! $RESOLVED 上没有本应用在响应，DNS 可能仍指向别处。" >&2
+  echo "   请用 dig +short $DOMAIN 与服务器公网 IP 对照后重试。" >&2
   exit 1
 fi
 
@@ -21,5 +31,6 @@ certbot --nginx -d "$DOMAIN" --redirect -n --agree-tos -m "$EMAIL"
 
 echo "==> 重载并验证"
 systemctl reload nginx
-curl -sI --max-time 15 "https://$DOMAIN/" | head -1
+# 用 GET 而非 HEAD：应用只处理 GET/POST，HEAD 会拿到 404（浏览器不受影响）
+curl -s -o /dev/null --max-time 15 -w "https://$DOMAIN/ -> HTTP %{http_code}\n" "https://$DOMAIN/"
 echo "完成: https://$DOMAIN/"
