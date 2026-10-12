@@ -266,3 +266,63 @@ test('清空历史会中止进行中的回合，不再基于空上下文发言',
   assert.equal(room.messages.length, 0, '清空后不得再有任何消息（含在途发言）');
   assert.ok(events.some((e) => e.type === 'turn_end' && e.payload.reason === 'cleared'));
 });
+
+test('有目标的讨论会向 Agent 注入循证要求，自由讨论不会', async () => {
+  const llm = createFakeLlm();
+  const { service } = makeService({ llm });
+
+  await hostSay(service, '有依据吗：远程办公能提升多少产出？');
+  const targetedSpeech = llm.calls.speak[0].messages.map((m) => m.content).join('\n');
+  assert.match(targetedSpeech, /事实与数据纪律/, '有目标讨论必须要求引用可核查来源');
+  const targetedDecision = llm.calls.decide[0].messages.map((m) => m.content).join('\n');
+  assert.match(targetedDecision, /有数据或可靠依据可以补充/);
+
+  // 切到自由讨论：提示词里不应再出现循证要求
+  llm.calls.speak.length = 0;
+  const done = new Promise((resolve) => service.subscribe((e) => e.type === 'turn_end' && resolve(e)));
+  service.postHostMessage('大家随便聊', { mode: 'free' });
+  await done;
+  assert.ok(llm.calls.speak.length > 0);
+  for (const call of llm.calls.speak) {
+    const prompt = call.messages.map((m) => m.content).join('\n');
+    assert.ok(!prompt.includes('事实与数据纪律'), '自由讨论不得注入循证要求');
+  }
+});
+
+test('总结讨论：生成系统消息入历史，但不参与后续 Agent 上下文', async () => {
+  const llm = createFakeLlm();
+  const { service, room, events } = makeService({ llm });
+  await hostSay(service, '总结测试话题');
+  const before = llm.calls.speak.length;
+
+  const summary = await service.summarizeDiscussion();
+  assert.equal(summary.kind, 'system');
+  assert.equal(summary.meta.summary, true);
+  assert.ok(summary.content.length > 0);
+  assert.equal(room.messages.at(-1), summary);
+  assert.ok(events.some((e) => e.type === 'message' && e.payload.id === summary.id));
+
+  // 再触发一轮：Agent 的上下文里不应出现总结内容
+  await hostSay(service, '继续讨论');
+  const laterPrompts = llm.calls.speak.slice(before + 1).map((c) => c.messages.map((m) => m.content).join('\n'));
+  assert.ok(laterPrompts.length > 0);
+  for (const p of laterPrompts) {
+    assert.ok(!p.includes(summary.content), '总结是派生记录，不得进入 Agent 上下文');
+  }
+});
+
+test('没有 Agent 发言时拒绝总结', async () => {
+  const { service } = makeService({ llm: createFakeLlm() });
+  await assert.rejects(() => service.summarizeDiscussion(), /还没有可总结的讨论/);
+});
+
+test('总结不影响调度：不改变上一句发言人与提名', async () => {
+  const llm = createFakeLlm();
+  const { service, room } = makeService({ llm });
+  await hostSay(service, '调度隔离测试');
+  const lastAgentBefore = room.messages.filter((m) => m.kind === 'agent').at(-1);
+  await service.summarizeDiscussion();
+  assert.equal(room.lastSpeakerId, lastAgentBefore.speakerId, '总结不得抢占发言权');
+  const eligible = room.eligibleAgents().map((a) => a.id);
+  assert.ok(!eligible.includes(lastAgentBefore.speakerId), '禁连庄规则不受总结影响');
+});

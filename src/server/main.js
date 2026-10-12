@@ -33,5 +33,5 @@ const http = createHttpServer({ service, publicDir });
 await http.listen(config.port);
 console.log(`[agent-chat] 房间「${room.title}」已就绪，10 位成员在线`);
 console.log(`[agent-chat] 打开 http://localhost:${config.port}`);
-console.log(`[agent-chat] LLM: ${config.llm.baseUrl} (speak=${config.llm.model}, decide=${config.llm.decisionModel})`);
+console.log(`[agent-chat] LLM: ${config.llm.baseUrl} (speak=${config.llm.speakModel}, decide=${config.llm.decisionModel})`);
 console.log(`[agent-chat] 已恢复 ${room.messages.length} 条历史消息`);

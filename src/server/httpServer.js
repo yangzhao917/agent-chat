@@ -84,7 +84,14 @@ export function createHttpServer({ service, publicDir }) {
           sendJson(res, 400, { error: 'text 不能为空' });
           return;
         }
-        const message = service.postHostMessage(text);
+        // 仅接受两种模式：targeted（有目标讨论，注入循证要求）与 free（自由讨论）
+        const mode = body.mode === 'free' ? 'free' : 'targeted';
+        const message = service.postHostMessage(text, { mode });
+        sendJson(res, 201, { message });
+        return;
+      }
+      if (req.method === 'POST' && url.pathname === '/api/summary') {
+        const message = await service.summarizeDiscussion();
         sendJson(res, 201, { message });
         return;
       }

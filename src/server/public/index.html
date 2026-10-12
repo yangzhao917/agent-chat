@@ -13,7 +13,7 @@
       <span id="room-status" class="status" hidden>讨论中</span>
     </div>
     <div class="controls">
-      <button id="btn-nudge" class="btn primary">让 Agent 们自由讨论</button>
+      <button id="btn-nudge" class="btn primary">自由讨论</button>
       <button id="btn-pause" class="btn">暂停</button>
       <button id="btn-reset" class="btn danger">清空记录</button>
     </div>
@@ -22,6 +22,9 @@
   <main class="layout">
     <section class="chat">
       <ol id="messages" class="messages" aria-live="polite"></ol>
+      <div class="composer-top">
+        <button id="btn-summary" class="btn" type="button" hidden>总结讨论</button>
+      </div>
       <form id="composer" class="composer">
         <input id="input" type="text" placeholder="以主持人身份说点什么，Agent 们会自己决定谁接话…" maxlength="500" autocomplete="off" />
         <button type="submit" class="btn primary">发送</button>

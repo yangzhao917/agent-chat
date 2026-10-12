@@ -130,3 +130,57 @@ test('SSE 通道推送命名事件', async () => {
     controller.abort();
   });
 });
+
+test('POST /api/messages 的 mode 决定循证模式并落库', async () => {
+  await withServer(async ({ base, room }) => {
+    await fetch(`${base}/api/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: '有目标的问题', mode: 'targeted' }),
+    });
+    await fetch(`${base}/api/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: '随便聊', mode: 'free' }),
+    });
+    await new Promise((r) => setTimeout(r, 120));
+    const humans = room.messages.filter((m) => m.kind === 'human').map((m) => m.meta.mode);
+    assert.deepEqual(humans, ['targeted', 'free']);
+  });
+});
+
+test('POST /api/messages 未传 mode 时按有目标讨论处理', async () => {
+  await withServer(async ({ base, room }) => {
+    await fetch(`${base}/api/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: '默认模式' }),
+    });
+    await new Promise((r) => setTimeout(r, 120));
+    assert.equal(room.messages.find((m) => m.kind === 'human').meta.mode, 'targeted');
+  });
+});
+
+test('POST /api/summary 生成总结系统消息', async () => {
+  await withServer(async ({ base, room }) => {
+    await fetch(`${base}/api/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: '总结接口测试' }),
+    });
+    await new Promise((r) => setTimeout(r, 120));
+    const res = await fetch(`${base}/api/summary`, { method: 'POST' });
+    assert.equal(res.status, 201);
+    const { message } = await res.json();
+    assert.equal(message.kind, 'system');
+    assert.equal(message.meta.summary, true);
+    assert.equal(room.messages.at(-1).id, message.id);
+  });
+});
+
+test('没有 Agent 发言时 POST /api/summary 返回 400', async () => {
+  await withServer(async ({ base }) => {
+    const res = await fetch(`${base}/api/summary`, { method: 'POST' });
+    assert.equal(res.status, 400);
+  });
+});

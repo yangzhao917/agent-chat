@@ -108,6 +108,18 @@ body {
 .msg.host .bubble { background: #23407a; border-color: #2f518f; }
 .msg.speaking .bubble { border-color: var(--accent); }
 
+/* 讨论总结：居中的系统卡片，与人类/Agent 气泡区分 */
+.msg.summary {
+  align-self: center;
+  max-width: 92%;
+}
+.msg.summary .bubble {
+  background: var(--panel-2);
+  border-color: var(--accent);
+  border-style: dashed;
+  white-space: pre-wrap;
+}
+
 .meta { font-size: 12px; color: var(--muted); margin-bottom: 3px; display: flex; gap: 8px; }
 .meta .name { font-weight: 600; color: var(--text); }
 
@@ -131,10 +143,19 @@ body {
 }
 @keyframes pulse { from { opacity: 0.3; } to { opacity: 1; } }
 
+.composer-top {
+  padding: 10px 20px 0;
+  background: var(--panel);
+}
+.composer-top .btn {
+  font-size: 12px;
+  padding: 5px 12px;
+}
+
 .composer {
   display: flex;
   gap: 10px;
-  padding: 14px 20px;
+  padding: 10px 20px 14px;
   border-top: 1px solid var(--line);
   background: var(--panel);
 }

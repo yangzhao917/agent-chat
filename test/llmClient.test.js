@@ -108,3 +108,43 @@ test('发言与决策的 token 配额可配置', async () => {
   assert.equal(calls[0].body.max_tokens, 111);
   assert.equal(calls[1].body.max_tokens, 222);
 });
+
+test('推理 token 吃满配额（finish_reason=length）时自动扩容重试', async () => {
+  const sentBudgets = [];
+  let n = 0;
+  const fetchImpl = async (url, init) => {
+    const budget = JSON.parse(init.body).max_tokens;
+    sentBudgets.push(budget);
+    n += 1;
+    if (n === 1) {
+      // 第一次：配额被推理吃满，content 为空
+      return { ok: true, status: 200, json: async () => ({ choices: [{ finish_reason: 'length', message: { content: '' } }] }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: '扩容后成功' } }] }) };
+  };
+  const llm = createLlmClient({ ...base, fetchImpl, maxRetries: 0 });
+  assert.equal(await llm.summarize([]), '扩容后成功');
+  assert.deepEqual(sentBudgets, [3000, 12000], '应按 4 倍扩容');
+});
+
+test('内容被截断（finish_reason=length 且有部分内容）同样扩容重试', async () => {
+  let n = 0;
+  const fetchImpl = async () => {
+    n += 1;
+    if (n === 1) return { ok: true, status: 200, json: async () => ({ choices: [{ finish_reason: 'length', message: { content: '{"content":"被截断' } }] }) };
+    return { ok: true, status: 200, json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: '{"content":"完整"}' } }] }) };
+  };
+  const llm = createLlmClient({ ...base, fetchImpl, maxRetries: 0 });
+  assert.equal(await llm.speak([]), '{"content":"完整"}');
+});
+
+test('扩容到上限仍被截断则抛错，不无限重试', async () => {
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls += 1;
+    return { ok: true, status: 200, json: async () => ({ choices: [{ finish_reason: 'length', message: { content: '' } }] }) };
+  };
+  const llm = createLlmClient({ ...base, fetchImpl, maxRetries: 0 });
+  await assert.rejects(() => llm.decide([]), /截断/);
+  assert.equal(calls, 3, '首次 + 2 次扩容，共 3 次请求');
+});

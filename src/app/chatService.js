@@ -3,7 +3,7 @@
 import { createMessage } from '../domain/message.js';
 import { rosterSummary } from '../domain/agent.js';
 import { parseDecision, parseSpeech, selectNextSpeaker } from '../domain/speaking.js';
-import { buildDecisionMessages, buildSpeechMessages } from '../domain/prompt.js';
+import { buildDecisionMessages, buildSpeechMessages, buildSummaryMessages } from '../domain/prompt.js';
 
 const MAX_CONSECUTIVE_SPEECH_FAILURES = 3;
 
@@ -44,13 +44,28 @@ export function createChatService({
     if (store) store.append(message);
   }
 
+  // 循证模式跟随最近一条人类消息：有目标的讨论要求引用权威/可信数据，
+  // 自由讨论不要求。Agent 发言不改变模式，避免互相绑架。
+  function isEvidenceRequired() {
+    const latestHost = [...room.messages].reverse().find((m) => m.kind === 'human');
+    return latestHost?.meta?.mode === 'targeted';
+  }
+
+  // 总结类消息不参与 Agent 上下文：它是派生记录，不是对话本身
+  function conversationHistory(limit) {
+    return room.messages.filter((m) => !m.meta?.summary).slice(-limit);
+  }
+
   // 人类（主持人）发言：立即进入共享历史，并作为新一轮的起点。
-  function postHostMessage(text) {
+  // mode: 'targeted'（有目标的讨论，默认）会向提示词注入循证要求；
+  //       'free'（自由讨论）不注入，避免闲聊也被迫引用来源。
+  function postHostMessage(text, { mode = 'targeted' } = {}) {
     const message = createMessage({
       speakerId: 'host',
       speakerName: room.hostName,
       kind: 'human',
       content: text,
+      meta: { mode },
     });
     room.appendMessage(message);
     persist(message);
@@ -157,15 +172,17 @@ export function createChatService({
 
   // 决策回合：并行询问所有候选者，单个失败按沉默处理，不阻塞其他人。
   async function gatherDecisions(candidates) {
-    const context = room.messages.slice(-history.decisionWindow);
+    const context = conversationHistory(history.decisionWindow);
     const roster = rosterSummary(room.agents);
-    const recentSpeakers = [...new Set(room.messages.slice(-6).map((m) => m.speakerName))];
+    const recentSpeakers = [...new Set(conversationHistory(6).map((m) => m.speakerName))];
     emit('agent_status', { phase: 'deciding', agentIds: candidates.map((a) => a.id) });
 
     const entries = await Promise.all(
       candidates.map(async (agent) => {
         try {
-          const raw = await llm.decide(buildDecisionMessages({ agent, history: context, roster, recentSpeakers }));
+          const raw = await llm.decide(
+            buildDecisionMessages({ agent, history: context, roster, recentSpeakers, evidenceRequired: isEvidenceRequired() }),
+          );
           const decision = parseDecision(raw);
           if (!decision) throw new Error('决策输出无法解析');
           return [agent.id, decision];
@@ -183,8 +200,10 @@ export function createChatService({
   async function speakAs(agent) {
     emit('agent_status', { agentId: agent.id, status: 'speaking' });
     try {
-      const context = room.messages.slice(-history.max);
-      const raw = await llm.speak(buildSpeechMessages({ agent, history: context, roster: rosterSummary(room.agents) }));
+      const context = conversationHistory(history.max);
+      const raw = await llm.speak(
+        buildSpeechMessages({ agent, history: context, roster: rosterSummary(room.agents), evidenceRequired: isEvidenceRequired() }),
+      );
       const parsed = parseSpeech(raw, { roster: room.agents });
       if (!parsed) throw new Error('发言输出无法解析');
       const message = createMessage({
@@ -206,6 +225,29 @@ export function createChatService({
     }
   }
 
+  // 总结讨论：对整段对话（不含此前的总结）生成一段摘要，作为系统消息入历史。
+  // 只追加、不触发调度，也不作为任何 Agent 的上下文。
+  async function summarizeDiscussion() {
+    const context = conversationHistory(Number.MAX_SAFE_INTEGER);
+    if (!context.some((m) => m.kind === 'agent')) {
+      throw new Error('还没有可总结的讨论');
+    }
+    const raw = await llm.summarize(buildSummaryMessages({ history: context }));
+    const content = raw.trim().slice(0, 1000);
+    if (!content) throw new Error('总结生成失败：模型未返回内容');
+    const message = createMessage({
+      speakerId: 'summary',
+      speakerName: '讨论总结',
+      kind: 'system',
+      content,
+      meta: { summary: true },
+    });
+    room.appendMessage(message);
+    persist(message);
+    emit('message', message);
+    return message;
+  }
+
   function setPaused(paused) {
     room.setPaused(paused);
     emit('room_state', room.snapshot());
@@ -225,6 +267,7 @@ export function createChatService({
     room,
     subscribe,
     postHostMessage,
+    summarizeDiscussion,
     setPaused,
     clearHistory,
     // 供启动恢复历史后手动触发一轮（无新人类消息）

@@ -59,19 +59,32 @@ function setRoomStatus(state) {
 
 function appendMessage(message) {
   const li = document.createElement('li');
-  li.className = `msg ${message.kind === 'human' ? 'host' : 'agent'}`;
+  const isSummary = message.meta?.summary === true;
+  li.className = `msg ${isSummary ? 'summary' : message.kind === 'human' ? 'host' : 'agent'}`;
   const meta = agentMeta.get(message.speakerId);
-  const color = message.kind === 'human' ? '#7ee2a8' : (meta?.color ?? '#8b93a7');
-  const title = message.kind === 'human' ? '主持人' : (meta?.title ?? '');
+  const color = message.kind === 'human' ? '#7ee2a8' : isSummary ? 'transparent' : (meta?.color ?? '#8b93a7');
+  const title = message.kind === 'human' ? '主持人' : isSummary ? '由本房讨论生成' : (meta?.title ?? '');
+  const avatar = isSummary ? '📌' : esc(message.speakerName[0]);
   li.innerHTML = `
-    <div class="avatar" style="background:${color}">${esc(message.speakerName[0])}</div>
+    <div class="avatar" style="background:${color}">${avatar}</div>
     <div>
       <div class="meta"><span class="name">${esc(message.speakerName)}</span><span>${esc(title)}</span><span>${new Date(message.createdAt).toLocaleTimeString('zh-CN', { hour12: false })}</span></div>
-      <div class="bubble">${renderContent(message.content)}</div>
+      <div class="bubble">${isSummary ? esc(message.content) : renderContent(message.content)}</div>
     </div>`;
   messagesEl.appendChild(li);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
+
+// 讨论结束后才显示"总结讨论"：有 Agent 发言且当前没有回合在进行
+function refreshSummaryButton(state) {
+  const hasDiscussion = (state.messages ?? []).some((m) => m.kind === 'agent');
+  const btn = $('btn-summary');
+  btn.hidden = !(hasDiscussion && state.status !== 'discussing' && !state.paused);
+  if (btn.dataset.busy === '1') btn.textContent = '总结生成中…';
+  else btn.textContent = '总结讨论';
+}
+
+let lastState = { messages: [], status: 'idle', paused: false };
 
 function handleEvent(event) {
   switch (event.type) {
@@ -82,10 +95,13 @@ function handleEvent(event) {
         messagesEl.innerHTML = '';
         for (const m of event.payload.messages) appendMessage(m);
       }
+      lastState = event.payload;
       setRoomStatus(event.payload);
+      refreshSummaryButton(event.payload);
       break;
     case 'message':
       appendMessage(event.payload);
+      refreshSummaryButton({ messages: [...(lastState.messages ?? []), event.payload], status: lastState.status, paused: lastState.paused });
       break;
     case 'agent_status':
       if (event.payload.phase === 'deciding' || event.payload.phase === 'decided') {
@@ -130,7 +146,25 @@ $('composer').addEventListener('submit', (e) => {
 });
 
 $('btn-nudge').addEventListener('click', () => {
-  post('/api/messages', { text: '大家自由聊聊吧，什么话题都行。' }).catch((err) => alert(err.message));
+  // mode=free：自由讨论不要求引用来源
+  post('/api/messages', { text: '大家自由聊聊吧，什么话题都行。', mode: 'free' }).catch((err) => alert(err.message));
+});
+
+$('btn-summary').addEventListener('click', async () => {
+  const btn = $('btn-summary');
+  btn.dataset.busy = '1';
+  btn.disabled = true;
+  btn.textContent = '总结生成中…';
+  try {
+    await post('/api/summary');
+    // 总结通过 SSE 的 message 事件追加，这里只需收起按钮
+    btn.hidden = true;
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    btn.dataset.busy = '';
+    btn.disabled = false;
+  }
 });
 
 $('btn-pause').addEventListener('click', async () => {

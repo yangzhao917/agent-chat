@@ -30,7 +30,7 @@ npm test
 | `LLM_API_KEY` | 取 `STEP_API_KEY` | API Key |
 | `LLM_MODEL` | `step-5-preview` | 发言模型 |
 | `LLM_DECISION_MODEL` | `step-3.5-flash` | 决策模型（轻量、低温） |
-| `LLM_SPEAK_MAX_TOKENS` / `LLM_DECISION_MAX_TOKENS` | `3000` / `2000` | **推理模型的推理 token 也占配额，改小会导致 content 为空** |
+| `LLM_SPEAK_MAX_TOKENS` / `LLM_DECISION_MAX_TOKENS` / `LLM_SUMMARY_MAX_TOKENS` | `3000` / `2000` / `3000` | 推理模型的推理 token 也占配额；不足时客户端自动按 4 倍扩容重试（上限 16000，最多 2 次） |
 | `LLM_MAX_CONCURRENCY` | `6` | 上游并发上限（StepFun 为 8，留余量防 429） |
 | `MAX_AGENT_MESSAGES_PER_TURN` | `0`（不限） | 每轮 Agent 消息预算；正整数才启用 |
 | `URGE_THRESHOLD` | `4` | urge 低于该值视为不想发言 |
@@ -57,6 +57,17 @@ src/
 分层原则：领域层不知道 LLM 的存在，LLM 层不知道房间，server 只做协议转换。
 测试用假 LLM 驱动完整回合，不发真实请求。
 
+## 循证与总结
+
+- **有目标的讨论**（输入框发送，`mode: 'targeted'`）：发言提示词注入“事实与数据纪律”——
+  涉及事实、数据、比例、趋势或案例时必须给出可核查来源（机构/报告名 + 年份，如
+  “据 Gartner 2024 年报告”），没有把握就明说“我没有可靠数据”，禁止编造数字或虚构引用；
+  决策提示词同时把“有数据或可靠依据可以补充”列为高意愿信号。
+- **自由讨论**（顶栏“自由讨论”按钮，`mode: 'free'`）：不注入循证要求，避免闲聊也被迫引用。
+- 模式跟随最近一条人类消息，Agent 发言不改变模式。
+- **总结讨论**：输入框上方的按钮，对整段讨论生成 300 字以内摘要（保留关键数据及出处），
+  以系统消息形式入历史、可跨刷新保留，但被所有 Agent 的上下文窗口过滤，不参与调度。
+
 ## 发言调度规则
 
 1. 人类消息或"自由讨论"开启一轮。**默认不设条数上限、不设待机**：无人想发言时也会
@@ -70,6 +81,17 @@ src/
 5. 失败降级：单个决策失败 → 该 Agent 本轮沉默；发言失败 → 跳过并计数，连续 3 次失败才中止本轮。
 6. 失控刹车只有四个：随时暂停、清空记录、配置预算、连续 3 次发言失败。
    房间没有自然停顿点，这是刻意选择——发言意愿阈值只影响选谁，不停轮。
+
+## HTTP API
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/state` | 房间快照（成员、消息、状态） |
+| `GET` | `/api/events` | SSE 事件流（message / agent_status / turn_* / error） |
+| `POST` | `/api/messages` | 主持人发言并触发一轮；`mode`: `targeted`（默认）/ `free` |
+| `POST` | `/api/summary` | 生成本轮讨论总结（系统消息） |
+| `POST` | `/api/pause` | `{ "paused": true }` 暂停/继续 |
+| `POST` | `/api/reset` | 清空历史（同时中止进行中的回合） |
 
 ## 验收步骤
 

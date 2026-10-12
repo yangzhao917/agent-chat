@@ -1,6 +1,13 @@
 // 测试替身：按 Agent 姓名脚本化决策/发言，可注入失败与门控（用于中途插话场景）。
-export function createFakeLlm({ decisions = new Map(), speeches = new Map(), decideThrows = new Set(), speakThrows = new Set(), gate = null } = {}) {
-  const calls = { decide: [], speak: [] };
+export function createFakeLlm({
+  decisions = new Map(),
+  speeches = new Map(),
+  summaries = new Map(),
+  decideThrows = new Set(),
+  speakThrows = new Set(),
+  gate = null,
+} = {}) {
+  const calls = { decide: [], speak: [], summarize: [] };
 
   function lookup(map, agent) {
     const entry = map.get(agent.name);
@@ -24,6 +31,16 @@ export function createFakeLlm({ decisions = new Map(), speeches = new Map(), dec
       if (decideThrows.has('all') || decideThrows.has(agent.name)) throw new Error('决策模拟失败');
       const d = lookup(decisions, agent) ?? { want: true, urge: 8 };
       return JSON.stringify({ want: d.want, urge: d.urge, reason: d.reason ?? '测试理由' });
+    },
+    async summarize(messages) {
+      calls.summarize.push({ messages });
+      await passGate();
+      const scripted = summaries.get('all') ?? summaries.get('default');
+      if (typeof scripted === 'function') return scripted(messages);
+      if (scripted) return scripted;
+      const user = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+      const lines = user.split('\n').filter((l) => l.includes(':'));
+      return `共 ${lines.length} 条发言的总结：${lines.map((l) => l.split(':')[0]).join('、')} 参与了讨论。`;
     },
     async speak(messages) {
       const agent = decodeAgent(messages);

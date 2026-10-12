@@ -41,6 +41,7 @@ export function loadConfig(env = process.env) {
       decisionModel: get('LLM_DECISION_MODEL') || 'step-3.5-flash',
       speakMaxTokens: int(get('LLM_SPEAK_MAX_TOKENS'), 3000),
       decisionMaxTokens: int(get('LLM_DECISION_MAX_TOKENS'), 2000),
+      summaryMaxTokens: int(get('LLM_SUMMARY_MAX_TOKENS'), 3000),
       timeoutMs: int(get('LLM_TIMEOUT_MS'), 60000),
       maxRetries: int(get('LLM_MAX_RETRIES'), 2),
       // 上游并发上限（StepFun 为 8），超发会得到 429；保守取 6 留余量
