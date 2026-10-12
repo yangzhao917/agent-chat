@@ -33,7 +33,7 @@ export function loadConfig(env = process.env) {
   // STEP_API_KEY 兜底：本机环境已配置 StepFun 时无需额外设置 LLM_API_KEY
   const apiKey = get('LLM_API_KEY') || env.STEP_API_KEY || '';
   return {
-    port: int(get('PORT'), 3210),
+    port: int(get('PORT'), 3000),
     llm: {
       baseUrl: (get('LLM_BASE_URL') || 'https://api.stepfun.com/step_plan/v1').replace(/\/+$/, ''),
       apiKey,

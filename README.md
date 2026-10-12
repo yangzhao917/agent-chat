@@ -18,7 +18,7 @@ cp .env.example .env
 
 # 2. 启动
 npm start
-# 打开 http://localhost:3210
+# 打开 http://localhost:3000
 
 # 3. 测试
 npm test
@@ -28,7 +28,7 @@ npm test
 
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `PORT` | `3210` | HTTP 端口 |
+| `PORT` | `3000` | HTTP 端口 |
 | `LLM_BASE_URL` | `https://api.stepfun.com/step_plan/v1` | OpenAI 兼容接口地址 |
 | `LLM_API_KEY` | 取 `STEP_API_KEY` | API Key |
 | `LLM_MODEL` | `step-5-preview` | 发言模型 |
