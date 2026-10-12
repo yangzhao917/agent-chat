@@ -4,7 +4,8 @@
 //   1. 上一位发言者的有效提名优先——对话衔接优先于随机；
 //   2. 否则在"想发言"的候选者中按 urge² 加权随机——高意愿更可能发言但不保证，
 //      避免强势人设垄断话筒，也保留意外之喜；
-//   3. 无人想发言则返回 null，房间转入 idle，绝不空转烧钱。
+//   3. 无人想发言时兜底选择意愿最高者——房间不设待机状态，冷场也必须有人接话；
+//   4. 候选为空返回 null（本轮已无人可发言，由调用方结束回合）。
 
 // 从模型输出中尽力提取 JSON 对象：容忍 ```json 围栏与前后废话。
 function extractJsonObject(raw) {
@@ -63,14 +64,26 @@ export function selectNextSpeaker({ candidates, decisions, nomination = null, ur
     const d = decisions.get(a.id);
     return d && d.want && d.urge >= urgeThreshold;
   });
-  if (!willing.length) return null;
-
-  const weights = willing.map((a) => Math.pow(decisions.get(a.id).urge, 2));
-  const total = weights.reduce((s, w) => s + w, 0);
-  let roll = rng() * total;
-  for (let i = 0; i < willing.length; i += 1) {
-    roll -= weights[i];
-    if (roll <= 0) return willing[i].id;
+  if (willing.length) {
+    const weights = willing.map((a) => Math.pow(decisions.get(a.id).urge, 2));
+    const total = weights.reduce((s, w) => s + w, 0);
+    let roll = rng() * total;
+    for (let i = 0; i < willing.length; i += 1) {
+      roll -= weights[i];
+      if (roll <= 0) return willing[i].id;
+    }
+    return willing[willing.length - 1].id;
   }
-  return willing[willing.length - 1].id;
+
+  // 兜底：无人想发言时也必须有人接话，否则房间会冷场停转（已去掉待机状态）。
+  // 取意愿最高者并忽略 want 与阈值——取舍是：这可能让刚表示"不想说"的 Agent
+  // 发言，但相比整个房间停住，持续对话是更优先的目标；调用方仍可用暂停/预算刹住。
+  // 例外：决策调用本身失败（failed）不属于"选择沉默"，不参与兜底，
+  // 全部失败时返回 null，让调用方以故障为由结束回合。
+  const usable = candidates.filter((a) => !decisions.get(a.id)?.failed);
+  if (!usable.length) return null;
+  const urgeOf = (a) => decisions.get(a.id)?.urge ?? 0;
+  const maxUrge = Math.max(...usable.map(urgeOf));
+  const top = usable.filter((a) => urgeOf(a) === maxUrge);
+  return top[Math.min(top.length - 1, Math.floor(rng() * top.length))].id;
 }

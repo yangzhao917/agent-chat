@@ -82,13 +82,16 @@ export function createChatService({
     if (room.paused || room.status === 'discussing') return;
     room.setStatus('discussing');
     emit('turn_start', { reason, budget: room.turnBudget });
-    let stopReason = 'idle';
+    let stopReason = 'paused'; // 循环必经某个 break 退出并赋值，此处仅作兜底
     let consecutiveFailures = 0;
 
     try {
       // 先检查插话再检查预算：人类在预算耗尽的瞬间发言也必须被响应
       for (;;) {
-        if (room.paused) break;
+        if (room.paused) {
+          stopReason = 'paused';
+          break;
+        }
         // 清空历史会中止当前回合，且不再基于空上下文继续生成
         if (room.consumeAbort()) {
           stopReason = 'cleared';
@@ -120,8 +123,11 @@ export function createChatService({
           urgeThreshold: scheduling.urgeThreshold,
           rng,
         });
+        // 正常情况必有返回（无人想发言时兜底选意愿最高者）；
+        // 返回 null 只可能是全部候选的决策调用都失败了
         if (!pickId) {
-          stopReason = 'idle';
+          stopReason = 'no-decision';
+          emit('error', { message: '所有候选 Agent 的决策调用均失败，本轮结束' });
           break;
         }
 
@@ -165,7 +171,8 @@ export function createChatService({
           return [agent.id, decision];
         } catch (err) {
           logger.warn(`Agent「${agent.name}」决策失败，本轮沉默:`, err.message);
-          return [agent.id, { want: false, urge: 0, reason: '决策失败，保持沉默' }];
+          // failed 标记让调度兜底排除该 Agent：基础设施故障不等于"选择沉默"
+          return [agent.id, { want: false, urge: 0, reason: '决策失败，保持沉默', failed: true }];
         }
       }),
     );

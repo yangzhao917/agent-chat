@@ -10,7 +10,7 @@
   <header class="topbar">
     <div class="room-info">
       <h1 id="room-title">群聊房间</h1>
-      <span id="room-status" class="status idle">待机</span>
+      <span id="room-status" class="status" hidden>讨论中</span>
     </div>
     <div class="controls">
       <button id="btn-nudge" class="btn primary">让 Agent 们自由讨论</button>
@@ -33,7 +33,7 @@
       <ul id="agents" class="agents"></ul>
       <div class="legend">
         <h3>规则</h3>
-        <p>每条消息后，10 位 Agent 各自判断是否想接话；上一位发言者的提名优先，否则按发言意愿加权随机。默认不设条数上限——直到所有人都无意接话，或你点击暂停。</p>
+        <p>每条消息后，10 位 Agent 各自判断是否想接话；上一位发言者的提名优先，否则按发言意愿加权随机。房间不设待机：没人想发言时也会自动接话，只有暂停、清空或配置预算才能让它停下。</p>
       </div>
     </aside>
   </main>

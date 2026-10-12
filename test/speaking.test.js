@@ -46,9 +46,19 @@ test('提名无效时降级为加权随机', () => {
   assert.equal(pick, 'a', 'roll=0 时应选中权重最高的甲');
 });
 
-test('无人想发言时返回 null（房间应转入 idle）', () => {
-  const allNo = new Map(roster.map((a) => [a.id, { want: false, urge: 9 }]));
-  assert.equal(selectNextSpeaker({ candidates: roster, decisions: allNo, urgeThreshold: 4, rng: () => 0 }), null);
+test('无人想发言时兜底选中意愿最高者（房间不停转）', () => {
+  const allNo = new Map([
+    ['a', { want: false, urge: 9 }],
+    ['b', { want: false, urge: 2 }],
+    ['c', { want: false, urge: 5 }],
+  ]);
+  assert.equal(selectNextSpeaker({ candidates: roster, decisions: allNo, urgeThreshold: 4, rng: () => 0 }), 'a');
+});
+
+test('意愿并列时兜底随机取其一', () => {
+  const allNo = new Map(roster.map((a) => [a.id, { want: false, urge: 3 }]));
+  assert.equal(selectNextSpeaker({ candidates: roster, decisions: allNo, urgeThreshold: 4, rng: () => 0.99 }), 'c');
+  assert.equal(selectNextSpeaker({ candidates: roster, decisions: allNo, urgeThreshold: 4, rng: () => 0 }), 'a');
 });
 
 test('urge 低于阈值视为不想发言', () => {

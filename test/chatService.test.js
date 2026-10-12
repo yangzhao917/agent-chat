@@ -72,15 +72,17 @@ test('共享聊天记录：每次发言的提示词都包含此前全部关键�
   assert.ok(userPrompt.includes(speakers(room)[0]), '后发言者上下文包含第一位 Agent 的发言');
 });
 
-test('无人想发言时房间转入 idle，不产生空转消息', async () => {
-  const llm = createFakeLlm({ decisions: new Map([['__all__', { want: false, urge: 9 }]]) });
-  // 用默认兜底之外的方式：让所有决策都 want=false
+test('无人想发言时也不会停下：兜底接话直到预算耗尽', async () => {
   const silent = createFakeLlm();
   silent.decide = async () => JSON.stringify({ want: false, urge: 1, reason: '无话可说' });
-  const { service, room } = makeService({ llm: silent });
+  const { service, room } = makeService({ llm: silent, scheduling: { maxAgentMessagesPerTurn: 4 } });
   const end = await hostSay(service, '有人吗？');
-  assert.equal(end.payload.reason, 'idle');
-  assert.equal(agentMessages(room).length, 0);
+  // 没有待机状态：即使全员不想发言，也按兜底规则持续发言，直到预算耗尽
+  assert.equal(end.payload.reason, 'budget');
+  assert.equal(agentMessages(room).length, 4);
+  for (let i = 1; i < speakers(room).length; i += 1) {
+    assert.notEqual(speakers(room)[i], speakers(room)[i - 1], '兜底也不允许连庄');
+  }
 });
 
 test('上一位发言者的提名优先于意愿加权随机', async () => {
@@ -199,9 +201,9 @@ test('所有消息都写入持久化存储', async () => {
   assert.equal(persisted.filter((m) => m.kind === 'agent').length, 3);
 });
 
-test('无限额度：不设预算与单人上限，Agent 可在一轮内多次发言', async () => {
-  // 每位 Agent 只想发言 2 次，第 3 次被问及时沉默；
-  // rng 固定取 0 → 每次都选中候选名单中第一位，行为完全确定。
+test('无限额度 + 无待机：Agent 可多次发言，冷场也由兜底接话', async () => {
+  // 每位 Agent 只想发言 2 次，第 3 次被问及时沉默；rng 固定取 0 让行为完全确定。
+  // 配 6 条预算让测试可终止（线上默认无限，只能靠暂停/清空/预算刹住）。
   const counts = new Map();
   const decisions = new Map(
     createDefaultRoster().map((a) => [
@@ -213,21 +215,17 @@ test('无限额度：不设预算与单人上限，Agent 可在一轮内多次�
       },
     ]),
   );
-  const { service, room, events } = makeService({
+  const { service, room } = makeService({
     llm: createFakeLlm({ decisions }),
-    scheduling: { maxAgentMessagesPerTurn: 0, maxPerAgentPerTurn: 0 },
+    scheduling: { maxAgentMessagesPerTurn: 6, maxPerAgentPerTurn: 0 },
     rng: () => 0,
   });
   const end = await hostSay(service, '无限额度测试：大家随便聊');
-  // 无限额度下没有预算可耗尽，只能因为"无人想发言"而自然结束
-  assert.equal(end.payload.reason, 'idle');
-  assert.equal(end.payload.budget, null);
-  assert.ok(events.some((e) => e.type === 'turn_start' && e.payload.budget === null));
-
-  // 关键差异：林晚舟在一轮内发言了两次（旧配置下每人每轮仅一次）；
-  // 最终所有 Agent 都不想再接话，本轮自然结束
-  assert.equal(agentMessages(room).length, 3);
-  assert.deepEqual(speakers(room), ['林晚舟', '陈墨', '林晚舟']);
+  assert.equal(end.payload.reason, 'budget');
+  assert.equal(agentMessages(room).length, 6);
+  // 前 3 条是自愿发言（林晚舟、陈墨可多次发言）；之后全员沉默，由兜底规则接满预算
+  assert.deepEqual(speakers(room).slice(0, 3), ['林晚舟', '陈墨', '林晚舟']);
+  assert.ok(speakers(room).length > new Set(speakers(room)).size, '同一 Agent 在一轮内多次发言');
   for (let i = 1; i < speakers(room).length; i += 1) {
     assert.notEqual(speakers(room)[i], speakers(room)[i - 1], '仍然不允许连庄');
   }

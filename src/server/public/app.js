@@ -45,12 +45,14 @@ function setRoomStatus(state) {
   if (state.paused) {
     el.textContent = '已暂停';
     el.className = 'status paused';
+    el.hidden = false;
   } else if (state.status === 'discussing') {
     el.textContent = '讨论中';
     el.className = 'status discussing';
+    el.hidden = false;
   } else {
-    el.textContent = '待机';
-    el.className = 'status idle';
+    // 已去掉待机状态：房间只会有"讨论中/已暂停"两种可见状态，其余情况不展示徽标
+    el.hidden = true;
   }
   $('btn-pause').textContent = state.paused ? '继续' : '暂停';
 }
