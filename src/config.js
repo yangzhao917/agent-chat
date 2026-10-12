@@ -47,9 +47,10 @@ export function loadConfig(env = process.env) {
       maxConcurrent: int(get('LLM_MAX_CONCURRENCY'), 6),
     },
     scheduling: {
-      maxAgentMessagesPerTurn: int(get('MAX_AGENT_MESSAGES_PER_TURN'), 12),
+      // 0 = 不设上限（默认无限额度：一轮持续到无人想发言或暂停）
+      maxAgentMessagesPerTurn: int(get('MAX_AGENT_MESSAGES_PER_TURN'), 0),
       urgeThreshold: int(get('URGE_THRESHOLD'), 4),
-      maxPerAgentPerTurn: int(get('MAX_PER_AGENT_PER_TURN'), 1),
+      maxPerAgentPerTurn: int(get('MAX_PER_AGENT_PER_TURN'), 0),
       messageDelayMs: int(get('MESSAGE_DELAY_MS'), 900),
     },
     history: {

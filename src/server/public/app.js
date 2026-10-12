@@ -46,7 +46,8 @@ function setRoomStatus(state) {
     el.textContent = '已暂停';
     el.className = 'status paused';
   } else if (state.status === 'discussing') {
-    el.textContent = `讨论中 · 剩余 ${state.turnBudget} 条`;
+    // 默认无限额度：展示本轮已产生的条数，而非剩余额度
+    el.textContent = `讨论中 · 本轮 ${state.turnMessages ?? 0} 条`;
     el.className = 'status discussing';
   } else {
     el.textContent = '待机';
@@ -94,7 +95,7 @@ function handleEvent(event) {
       break;
     case 'turn_start':
     case 'turn_restart':
-      setRoomStatus({ status: 'discussing', paused: false, turnBudget: event.payload.budget });
+      setRoomStatus({ status: 'discussing', paused: false, turnMessages: event.payload.turnMessages ?? 0 });
       break;
     case 'turn_end':
       setRoomStatus({ status: 'idle', paused: false, turnBudget: 0 });

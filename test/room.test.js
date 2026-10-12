@@ -89,3 +89,22 @@ test('消息不变量：空内容与未知类型被拒绝', () => {
   assert.throws(() => createMessage({ speakerId: 'x', speakerName: '甲', kind: 'alien', content: 'hi' }));
   assert.throws(() => createMessage({ speakerId: 'x', speakerName: '甲', kind: 'human', content: 'x'.repeat(2001) }));
 });
+
+test('预算与单人上限为 0 时表示无限额度', () => {
+  const room = makeRoom({ maxAgentMessagesPerTurn: 0, maxPerAgentPerTurn: 0 });
+  assert.equal(room.turnBudget, null);
+  // 无限发言：连续发言也不耗尽额度，候选只受"不能连庄"约束
+  room.markSpoke('lin-wanzhou');
+  room.markSpoke('chen-mo');
+  room.markSpoke('su-rui');
+  assert.equal(room.turnBudget, null, '无限额度下预算始终为 null');
+  assert.equal(room.eligibleAgents().length, 9, '只排除上一句发言人');
+  assert.equal(room.turnMessages, 3);
+  room.resetTurn();
+  // resetTurn 不清除"上一句发言人"：跨轮同样禁止连庄，需别人发言后才恢复资格
+  assert.equal(room.eligibleAgents().length, 9);
+  assert.ok(!room.eligibleAgents().some((a) => a.id === 'su-rui'));
+  room.markSpoke('gu-yan');
+  assert.equal(room.eligibleAgents().length, 9);
+  assert.ok(room.eligibleAgents().some((a) => a.id === 'su-rui'));
+});

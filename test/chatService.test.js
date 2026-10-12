@@ -5,7 +5,7 @@ import { createDefaultRoster } from '../src/domain/personas.js';
 import { createChatService } from '../src/app/chatService.js';
 import { createFakeLlm, createGate } from './helpers/fakeLlm.js';
 
-function makeService({ llm, scheduling = {}, history = {} } = {}) {
+function makeService({ llm, scheduling = {}, history = {}, rng = Math.random } = {}) {
   const room = createRoom({
     id: 'test-room',
     title: '测试房间',
@@ -20,6 +20,7 @@ function makeService({ llm, scheduling = {}, history = {} } = {}) {
     store: null,
     scheduling: { maxAgentMessagesPerTurn: 12, maxPerAgentPerTurn: 1, messageDelayMs: 0, ...scheduling },
     history: { max: 30, decisionWindow: 16, ...history },
+    rng,
     sleep: async () => {},
   });
   service.subscribe((e) => events.push(e));
@@ -196,4 +197,48 @@ test('所有消息都写入持久化存储', async () => {
   await done;
   assert.equal(persisted.length, room.messages.length);
   assert.equal(persisted.filter((m) => m.kind === 'agent').length, 3);
+});
+
+test('无限额度：不设预算与单人上限，Agent 可在一轮内多次发言', async () => {
+  // 每位 Agent 只想发言 2 次，第 3 次被问及时沉默；
+  // rng 固定取 0 → 每次都选中候选名单中第一位，行为完全确定。
+  const counts = new Map();
+  const decisions = new Map(
+    createDefaultRoster().map((a) => [
+      a.name,
+      () => {
+        const c = (counts.get(a.name) ?? 0) + 1;
+        counts.set(a.name, c);
+        return c <= 2 ? { want: true, urge: 6 } : { want: false, urge: 0 };
+      },
+    ]),
+  );
+  const { service, room, events } = makeService({
+    llm: createFakeLlm({ decisions }),
+    scheduling: { maxAgentMessagesPerTurn: 0, maxPerAgentPerTurn: 0 },
+    rng: () => 0,
+  });
+  const end = await hostSay(service, '无限额度测试：大家随便聊');
+  // 无限额度下没有预算可耗尽，只能因为"无人想发言"而自然结束
+  assert.equal(end.payload.reason, 'idle');
+  assert.equal(end.payload.budget, null);
+  assert.ok(events.some((e) => e.type === 'turn_start' && e.payload.budget === null));
+
+  // 关键差异：林晚舟在一轮内发言了两次（旧配置下每人每轮仅一次）；
+  // 最终所有 Agent 都不想再接话，本轮自然结束
+  assert.equal(agentMessages(room).length, 3);
+  assert.deepEqual(speakers(room), ['林晚舟', '陈墨', '林晚舟']);
+  for (let i = 1; i < speakers(room).length; i += 1) {
+    assert.notEqual(speakers(room)[i], speakers(room)[i - 1], '仍然不允许连庄');
+  }
+});
+
+test('配置了预算时仍然受预算约束（向后兼容）', async () => {
+  const { service, room } = makeService({
+    llm: createFakeLlm(),
+    scheduling: { maxAgentMessagesPerTurn: 3, maxPerAgentPerTurn: 0 },
+  });
+  const end = await hostSay(service, '有限预算测试');
+  assert.equal(end.payload.reason, 'budget');
+  assert.equal(agentMessages(room).length, 3);
 });
