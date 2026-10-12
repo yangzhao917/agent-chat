@@ -55,13 +55,6 @@ export function createRoom({ id, title, hostName, agents, scheduling }) {
       );
     },
 
-    // 本轮已产生的 Agent 消息数（UI 展示用，替代原“剩余额度”语义）
-    get turnMessages() {
-      let total = 0;
-      for (const n of state.spokeThisTurn.values()) total += n;
-      return total;
-    },
-
     appendMessage(message) {
       messages.push(message);
       return message;
@@ -117,11 +110,6 @@ export function createRoom({ id, title, hostName, agents, scheduling }) {
         status: state.status,
         paused: state.paused,
         turnBudget: state.turnBudget,
-        turnMessages: (() => {
-          let total = 0;
-          for (const n of state.spokeThisTurn.values()) total += n;
-          return total;
-        })(),
         lastSpeakerId: state.lastSpeakerId,
         agents: agents.map((a) => ({ id: a.id, name: a.name, title: a.title, color: a.color, quirk: a.quirk })),
       };

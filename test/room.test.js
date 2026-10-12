@@ -99,7 +99,6 @@ test('预算与单人上限为 0 时表示无限额度', () => {
   room.markSpoke('su-rui');
   assert.equal(room.turnBudget, null, '无限额度下预算始终为 null');
   assert.equal(room.eligibleAgents().length, 9, '只排除上一句发言人');
-  assert.equal(room.turnMessages, 3);
   room.resetTurn();
   // resetTurn 不清除"上一句发言人"：跨轮同样禁止连庄，需别人发言后才恢复资格
   assert.equal(room.eligibleAgents().length, 9);

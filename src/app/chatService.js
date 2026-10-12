@@ -81,7 +81,7 @@ export function createChatService({
   async function runTurn(reason) {
     if (room.paused || room.status === 'discussing') return;
     room.setStatus('discussing');
-    emit('turn_start', { reason, budget: room.turnBudget, turnMessages: room.turnMessages });
+    emit('turn_start', { reason, budget: room.turnBudget });
     let stopReason = 'idle';
     let consecutiveFailures = 0;
 
@@ -92,7 +92,7 @@ export function createChatService({
         if (room.consumeHostInterject()) {
           room.resetTurn();
           turnRequested = false; // 本回合已接管，排队中的触发作废
-          emit('turn_restart', { reason: 'host-interject', budget: room.turnBudget, turnMessages: room.turnMessages });
+          emit('turn_restart', { reason: 'host-interject', budget: room.turnBudget });
         }
         // turnBudget 为 null 表示无限额度：只有配置了预算才在此收敛
         if (room.turnBudget !== null && room.turnBudget <= 0) {
@@ -140,7 +140,7 @@ export function createChatService({
       }
     } finally {
       room.setStatus('idle');
-      emit('turn_end', { reason: stopReason, budget: room.turnBudget, turnMessages: room.turnMessages });
+      emit('turn_end', { reason: stopReason, budget: room.turnBudget });
     }
   }
 
