@@ -106,3 +106,26 @@
 5. 点“总结讨论”生成摘要卡片，刷新页面后仍在；摘要不出现在后续任何 Agent 的上下文里。
 4. 杀进程重启后历史消息从 JSONL 恢复。
 5. 用假 LLM 的测试可证明：所有 Agent 的提示词中都包含此前的共享消息历史（即"共享聊天记录"可验证）。
+
+## 5. 开源发布（基线）
+
+目标：以同名仓库 `agent-chat` 公开发布到 GitHub，使外部读者可 clone 后直接跑起来。
+
+范围：
+- 仓库卫生：移除误入库的 `.DS_Store` 并加入 `.gitignore`；修正 README 中过时的测试数量。
+- 补充 `LICENSE` 与 README 的 License 章节。
+- 说明 LLM 提供方可替换（默认指向 StepFun，但任意 OpenAI 兼容端点均可）。
+
+关键边界：
+- **不得提交任何密钥或本地数据**。已核实：`data/`、`.env` 从未入库，全 12 个提交的历史中
+  无 `sk-` 形态密钥、无 `STEP_API_KEY=` 赋值。发布前重新扫描一次作为验收。
+- LICENSE 选型用户未指定，暂用 **MIT**（最常见、限制最少）；这是可后续替换的一次性决策，
+  需在交付时明确告知用户。
+- 不引入 CI、Issue 模板、贡献指南等范围外内容；不做 npm 发布，`package.json` 的
+  `private: true` 保留（仅阻止误发 npm，不影响 GitHub 开源）。
+
+验收标准：
+1. `git ls-files` 中无 `.DS_Store`、无 `.env`、无 `data/` 下任何文件。
+2. 全历史提交中无密钥形态字符串。
+3. `npm test` 70 项通过；README 的测试数量与实际一致。
+4. 仓库在 GitHub 上为 public，`git remote -v` 指向同名仓库，`main` 分支已推送。

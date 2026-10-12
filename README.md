@@ -29,7 +29,7 @@ npm test
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `PORT` | `3000` | HTTP 端口 |
-| `LLM_BASE_URL` | `https://api.stepfun.com/step_plan/v1` | OpenAI 兼容接口地址 |
+| `LLM_BASE_URL` | `https://api.stepfun.com/step_plan/v1` | OpenAI 兼容接口地址，换成任意兼容端点即可换提供方 |
 | `LLM_API_KEY` | 取 `STEP_API_KEY` | API Key |
 | `LLM_MODEL` | `step-5-preview` | 发言模型 |
 | `LLM_DECISION_MODEL` | `step-3.5-flash` | 决策模型（轻量、低温） |
@@ -100,7 +100,7 @@ src/
 ## 验收步骤
 
 ```bash
-npm test                      # 48 项单元/编排测试
+npm test                      # 70 项单元/编排测试
 npm start                     # 启动后在浏览器操作：
 ```
 
@@ -108,6 +108,10 @@ npm start                     # 启动后在浏览器操作：
 2. 观察一轮自主对话：无同一 Agent 连续发言；状态栏只出现"讨论中/已暂停"，房间不会自行进入待机。
 3. 点击"暂停"后调度停止，"继续"后恢复。
 4. 杀掉进程重启，历史消息从 `data/rooms/main.jsonl` 恢复（启动日志打印"已恢复 N 条历史消息"）。
+
+## License
+
+[MIT](LICENSE)
 
 ## 已知边界
 
