@@ -118,7 +118,18 @@ export function createHttpServer({ service, publicDir }) {
           sendJson(res, 403, { error: 'forbidden' });
           return;
         }
-        const content = await readFile(file);
+        let content;
+        try {
+          content = await readFile(file);
+        } catch (err) {
+          // 文件不存在是 404，不是 400：原实现让 ENOENT 落进外层 catch 报成 400，
+          // 把"没有这个资源"误报成"请求格式错误"，也会让 favicon 之类的正常请求看起来很脏
+          if (err.code === 'ENOENT') {
+            sendJson(res, 404, { error: 'not found' });
+            return;
+          }
+          throw err;
+        }
         res.writeHead(200, { 'content-type': MIME[`.${file.split('.').pop()}`] ?? 'application/octet-stream' });
         res.end(content);
         return;

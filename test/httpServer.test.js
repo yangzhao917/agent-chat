@@ -113,6 +113,11 @@ test('静态文件限制在 public 目录内（防目录穿越）', async () => 
       assert.ok(!res.body.includes('"name": "agent-chat"'), `${path} 不得泄露仓库文件`);
       assert.ok(!res.body.includes('root:'), `${path} 不得泄露系统文件`);
     }
+
+    // 静态资源不存在应是 404 而非 400：前者表示"没这个资源"，
+    // 后者会被误读成"请求格式错误"（favicon 之类的正常请求也会中招）
+    const missing = await fetch(`${base}/favicon.ico`);
+    assert.equal(missing.status, 404);
   });
 });
 
