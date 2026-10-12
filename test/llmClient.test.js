@@ -148,3 +148,149 @@ test('扩容到上限仍被截断则抛错，不无限重试', async () => {
   await assert.rejects(() => llm.decide([]), /截断/);
   assert.equal(calls, 3, '首次 + 2 次扩容，共 3 次请求');
 });
+
+
+// ---- 流式发言：reasoning_content 实时透出 ----
+
+// 构造假的流式响应体：把 SSE 文本按 chunks 切片，模拟网络分片
+function streamOf(chunks) {
+  const encoder = new TextEncoder();
+  let i = 0;
+  return {
+    ok: true,
+    status: 200,
+    body: {
+      getReader() {
+        return {
+          read: async () =>
+            i < chunks.length ? { done: false, value: encoder.encode(chunks[i++]) } : { done: true, value: undefined },
+        };
+      },
+    },
+  };
+}
+
+const sse = (obj) => `data: ${JSON.stringify(obj)}\n\n`;
+
+test('speakStream 发流式请求，实时回调推理增量并返回完整正文', async () => {
+  const bodies = [];
+  const llm = createLlmClient({
+    ...base,
+    fetchImpl: async (url, init) => {
+      bodies.push(JSON.parse(init.body));
+      return streamOf([
+        sse({ choices: [{ delta: { reasoning_content: '先想想' } }] }),
+        sse({ choices: [{ delta: { reasoning_content: '再说' } }] }),
+        sse({ choices: [{ delta: { content: '{"content":"你好"' } }] }),
+        sse({ choices: [{ delta: { content: ',"next":null}' } }] }),
+        sse({ choices: [{ delta: {}, finish_reason: 'stop' }] }),
+        'data: [DONE]\n\n',
+      ]);
+    },
+  });
+  const reasoning = [];
+  const out = await llm.speakStream([{ role: 'user', content: '在吗' }], {
+    onReasoning: (d) => reasoning.push(d),
+  });
+  assert.equal(out, '{"content":"你好","next":null}');
+  assert.deepEqual(reasoning, ['先想想', '再说']);
+  assert.equal(bodies[0].stream, true, '必须带 stream: true');
+  assert.equal(bodies[0].model, 'big');
+});
+
+test('SSE 行被网络分片切断时仍能正确拼接', async () => {
+  const llm = createLlmClient({
+    ...base,
+    fetchImpl: async () =>
+      streamOf([
+        // 同一条 data 行被切成三段，前两段连合法 JSON 都算不上
+        'data: {"choices":[{"delta":{"reasoning_con',
+        'tent":"半句',
+        '思考"}}]}\n\ndata: {"choices":[{"delta":{"content":"完整回答"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+      ]),
+  });
+  const reasoning = [];
+  const out = await llm.speakStream([], { onReasoning: (d) => reasoning.push(d) });
+  assert.equal(out, '完整回答');
+  assert.deepEqual(reasoning, ['半句思考']);
+});
+
+test('流式响应被截断时扩容重试，并通知上层作废已显示的思考', async () => {
+  const budgets = [];
+  let n = 0;
+  const llm = createLlmClient({
+    ...base,
+    maxRetries: 0,
+    fetchImpl: async (url, init) => {
+      budgets.push(JSON.parse(init.body).max_tokens);
+      n += 1;
+      if (n === 1) {
+        return streamOf([
+          sse({ choices: [{ delta: { reasoning_content: '想了一半' } }] }),
+          sse({ choices: [{ delta: {}, finish_reason: 'length' }] }),
+        ]);
+      }
+      return streamOf([
+        sse({ choices: [{ delta: { reasoning_content: '重新想' } }] }),
+        sse({ choices: [{ delta: { content: '扩容后的完整回答' } }] }),
+        sse({ choices: [{ delta: {}, finish_reason: 'stop' }] }),
+      ]);
+    },
+  });
+  const restarts = [];
+  const out = await llm.speakStream([], { onRestart: () => restarts.push(1) });
+  assert.equal(out, '扩容后的完整回答');
+  assert.deepEqual(budgets, [3000, 12000], '流式路径同样按 4 倍扩容');
+  assert.equal(restarts.length, 1, '重试前必须通知上层丢弃半段思考，避免两段被拼成一段');
+});
+
+test('流式请求遇到可重试错误时同样退避重试', async () => {
+  let n = 0;
+  const slept = [];
+  const llm = createLlmClient({
+    ...base,
+    maxRetries: 2,
+    sleep: (ms) => {
+      slept.push(ms);
+      return Promise.resolve();
+    },
+    fetchImpl: async () => {
+      n += 1;
+      if (n === 1) return { ok: false, status: 503, text: async () => 'busy' };
+      return streamOf([
+        sse({ choices: [{ delta: { content: '重试后成功' } }] }),
+        sse({ choices: [{ delta: {}, finish_reason: 'stop' }] }),
+      ]);
+    },
+  });
+  assert.equal(await llm.speakStream([]), '重试后成功');
+  assert.equal(n, 2);
+  assert.deepEqual(slept, [300]);
+});
+
+test('流式响应缺少 body 时抛错，不静默返回空内容', async () => {
+  const llm = createLlmClient({ ...base, maxRetries: 0, fetchImpl: async () => ({ ok: true, status: 200 }) });
+  await assert.rejects(() => llm.speakStream([]), /body/);
+});
+
+test('流式路径同样受并发闸门限制', async () => {
+  let inFlight = 0;
+  let peak = 0;
+  const llm = createLlmClient({
+    ...base,
+    maxConcurrent: 2,
+    maxRetries: 0,
+    fetchImpl: async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 10));
+      inFlight -= 1;
+      return streamOf([
+        sse({ choices: [{ delta: { content: 'ok' } }] }),
+        sse({ choices: [{ delta: {}, finish_reason: 'stop' }] }),
+      ]);
+    },
+  });
+  await Promise.all(Array.from({ length: 8 }, () => llm.speakStream([])));
+  assert.equal(peak, 2, '流式请求也必须走并发闸门');
+});

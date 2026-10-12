@@ -83,13 +83,76 @@ export function createLlmClient({
     }
   }
 
-  async function chat({ model, messages, temperature, maxTokens }) {
+  // 流式请求：推理型模型先吐 reasoning_content、很久之后才吐正文，
+  // 把推理增量实时透出，前端才能在正文生成前就有东西可看（缩短"盯着转圈"的感知等待）。
+  // 返回的仍是完整正文字符串，入库与持久化路径完全不变。
+  async function requestStream(model, messages, temperature, maxTokens, { onReasoning, onRestart } = {}) {
+    let budget = maxTokens;
+    for (let escalation = 0; ; escalation += 1) {
+      const res = await fetchImpl(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({ model, messages, temperature, max_tokens: budget, stream: true }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new LlmError(`LLM HTTP ${res.status}: ${body.slice(0, 200)}`, {
+          status: res.status,
+          retriable: RETRIABLE_STATUS.has(res.status),
+        });
+      }
+      if (!res.body) throw new LlmError('LLM 流式响应缺少 body');
+
+      let content = '';
+      let truncated = false;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        // SSE 以空行分帧、以 "data:" 承载负载；按行切分足够，跨包的残行留在 buffer 里
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          const payload = line.slice(5).trim();
+          if (!payload || payload === '[DONE]') continue;
+          let chunk;
+          try {
+            chunk = JSON.parse(payload);
+          } catch {
+            continue; // 心跳或分片残缺，跳过
+          }
+          const delta = chunk.choices?.[0]?.delta;
+          if (delta?.reasoning_content) onReasoning?.(delta.reasoning_content);
+          if (delta?.content) content += delta.content;
+          if (chunk.choices?.[0]?.finish_reason === 'length') truncated = true;
+        }
+      }
+      if (content.trim() && !truncated) return content;
+      if (truncated && escalation < MAX_ESCALATIONS && budget < MAX_ESCALATED_TOKENS) {
+        budget = Math.min(MAX_ESCALATED_TOKENS, budget * 4);
+        // 扩容后重试会重新产出一份思考：通知上层丢弃已展示的半段，避免两段思考被拼成一段
+        onRestart?.();
+        continue;
+      }
+      throw new LlmError(
+        truncated ? 'LLM 响应因 max_tokens 不足被截断，扩容后仍失败' : 'LLM 响应缺少 content',
+      );
+    }
+  }
+
+  // 并发闸门 + 指数退避重试的外壳：同步与流式两条路径共用同一套失败语义
+  async function withRetry(request) {
     let lastError;
     await acquire();
     try {
       for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
         try {
-          return await requestOnce(model, messages, temperature, maxTokens);
+          return await request();
         } catch (err) {
           lastError =
             err instanceof LlmError ? err : new LlmError(`LLM 请求失败: ${err.message}`, { retriable: true });
@@ -103,6 +166,14 @@ export function createLlmClient({
     }
   }
 
+  function chat({ model, messages, temperature, maxTokens }) {
+    return withRetry(() => requestOnce(model, messages, temperature, maxTokens));
+  }
+
+  function chatStream({ model, messages, temperature, maxTokens, onReasoning, onRestart }) {
+    return withRetry(() => requestStream(model, messages, temperature, maxTokens, { onReasoning, onRestart }));
+  }
+
   return {
     // 决策用轻量模型 + 低温度：追求快、便宜、格式稳定。
     // 注意：推理型模型的推理 token 同样占用 max_tokens，配额太小会被推理吃满；
@@ -113,6 +184,17 @@ export function createLlmClient({
     // 发言用主模型 + 高温度：追求人设差异与多样性，同样要为推理 token 留足配额
     speak(messages) {
       return chat({ model: speakModel, messages, temperature: 0.9, maxTokens: speakMaxTokens });
+    },
+    // 流式发言：推理增量通过 onReasoning 实时流出，返回值与 speak 完全一致
+    speakStream(messages, { onReasoning, onRestart } = {}) {
+      return chatStream({
+        model: speakModel,
+        messages,
+        temperature: 0.9,
+        maxTokens: speakMaxTokens,
+        onReasoning,
+        onRestart,
+      });
     },
     // 总结用主模型 + 低温度：追求忠实压缩，不追求创造性
     summarize(messages) {

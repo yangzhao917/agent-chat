@@ -253,6 +253,33 @@ body {
 .meta { font-size: 12px; color: var(--muted); margin-bottom: 4px; display: flex; gap: 8px; align-items: baseline; }
 .meta .name { font-weight: 600; color: var(--gold); font-family: var(--font-display); letter-spacing: 0.04em; }
 .msg.host .meta { flex-direction: row-reverse; }
+/* 思考气泡：比正式消息更暗、虚线边框、可滚动，明确"尚未成形"
+   ——推理内容不进历史，正式消息到达时整个气泡被替换掉 */
+.msg.reasoning .bubble {
+  background: rgba(26, 19, 12, 0.6);
+  border-style: dashed;
+  border-color: var(--line-strong);
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.65;
+  max-height: 140px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.msg.reasoning .meta .name { color: var(--muted); font-weight: 500; }
+.msg.reasoning .avatar { opacity: 0.5; filter: grayscale(0.4); }
+.msg.reasoning .reason-text { white-space: pre-wrap; word-break: break-word; }
+.caret {
+  display: inline-block;
+  width: 1px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--ember-bright);
+  animation: caret-blink 1s steps(2, start) infinite;
+}
+@keyframes caret-blink { 50% { opacity: 0; } }
+
 
 .mention {
   color: var(--ember-bright);
@@ -352,6 +379,6 @@ body {
 
 /* 尊重系统的减弱动效设置 */
 @media (prefers-reduced-motion: reduce) {
-  .embers, .fire-glow, .flame, .status.discussing, .msg { animation: none; }
+  .embers, .fire-glow, .flame, .status.discussing, .msg, .caret { animation: none; }
   .embers span { display: none; }
 }
