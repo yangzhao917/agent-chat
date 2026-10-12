@@ -218,6 +218,7 @@ npm test   # 70 项单元与编排测试，全部使用假 LLM，不发真实请
 | [README.md](README.md)（本文） | 想用起来、想评估的人 |
 | [docs/prompts.md](docs/prompts.md) | 想调人设、改提示词的人 |
 | [docs/plan.md](docs/plan.md) | 后续维护者：实施基线、关键取舍、实测数据、验收标准 |
+| [deploy/README.md](deploy/README.md) | 想自己部署的人：一键安装脚本、systemd 服务、Nginx 反代、运维命令 |
 
 ## License
 

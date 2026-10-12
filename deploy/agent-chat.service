@@ -1,0 +1,18 @@
+[Unit]
+Description=围炉夜话 agent-chat - 多 Agent 群聊房间
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 应用统一放在 /opt/app 下，本项目占 /opt/app/agent-chat
+WorkingDirectory=/opt/app/agent-chat
+EnvironmentFile=/opt/app/agent-chat/.env
+ExecStart=/usr/bin/node src/server/main.js
+Restart=always
+RestartSec=3
+# 聊天记录写在 DATA_DIR，需要可写
+ReadWritePaths=/opt/app/agent-chat/data
+
+[Install]
+WantedBy=multi-user.target
