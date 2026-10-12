@@ -38,8 +38,20 @@ mkdir -p /opt/app
 if [ -d "$APP_DIR/.git" ]; then
   git -C "$APP_DIR" fetch --quiet origin
   git -C "$APP_DIR" reset --hard origin/main
+elif [ -d "$APP_DIR/package.json" ]; then
+  # 没有 .git：说明是 scp 拷过来的压缩包解压的，跳过拉取，直接用它
+  echo "检测到非 git 部署，保留现有代码"
 else
-  git clone --depth 1 "$REPO_URL" "$APP_DIR"
+  if git clone --depth 1 "$REPO_URL" "$APP_DIR" 2>/dev/null; then
+    echo "已从 GitHub 克隆"
+  else
+    echo "无法访问 github.com（国内服务器常见）。请改用 scp 部署：" >&2
+    echo "  本地:  git archive --format=tar.gz -o /tmp/ac.tgz HEAD" >&2
+    echo "  本地:  scp /tmp/ac.tgz ${RUN_USER}@<服务器IP>:/tmp/" >&2
+    echo "  服务器: sudo mkdir -p $APP_DIR && sudo tar -xzf /tmp/ac.tgz -C $APP_DIR" >&2
+    echo "  然后重跑本脚本" >&2
+    exit 1
+  fi
 fi
 
 # ---- 3. 配置 ----------------------------------------------------------------
@@ -67,7 +79,11 @@ fi
 
 # ---- 4. 注册为系统服务 ------------------------------------------------------
 log "注册 systemd 服务"
-cp "$APP_DIR/deploy/agent-chat.service" /etc/systemd/system/agent-chat.service
+# 服务按部署账号运行，不用 root：既缩小权限，也避免 root 建的文件让后续更新写不进去
+RUN_USER="${SUDO_USER:-$(id -un)}"
+sed -e "s|^User=.*|User=${RUN_USER}|" -e "s|^Group=.*|Group=${RUN_USER}|" \
+  "$APP_DIR/deploy/agent-chat.service" > /etc/systemd/system/agent-chat.service
+chown -R "${RUN_USER}:${RUN_USER}" "$APP_DIR"
 systemctl daemon-reload
 systemctl enable --now agent-chat
 sleep 2

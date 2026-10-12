@@ -11,6 +11,9 @@ EnvironmentFile=/opt/app/agent-chat/.env
 ExecStart=/usr/bin/node src/server/main.js
 Restart=always
 RestartSec=3
+# User/Group 由 install.sh 按实际部署账号填充，不写死，避免与目录属主不一致导致写不进去
+User=ubuntu
+Group=ubuntu
 # 聊天记录写在 DATA_DIR，需要可写
 ReadWritePaths=/opt/app/agent-chat/data
 
