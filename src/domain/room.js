@@ -14,6 +14,7 @@ export function createRoom({ id, title, hostName, agents, scheduling }) {
     spokeThisTurn: new Map(),
     turnBudget: maxBudget,
     pendingHostInterject: false,
+    aborted: false,
     turnSeq: 0,
   };
 
@@ -78,6 +79,21 @@ export function createRoom({ id, title, hostName, agents, scheduling }) {
       state.pendingHostInterject = true;
     },
 
+    // 中止当前回合：用于"清空记录"。与插话不同，中止不开启新一轮。
+    requestAbort() {
+      state.aborted = true;
+    },
+
+    consumeAbort() {
+      const had = state.aborted;
+      state.aborted = false;
+      return had;
+    },
+
+    get aborted() {
+      return state.aborted;
+    },
+
     // 消费人类插话标记：返回 true 表示回合需要以此为新起点重新评估。
     consumeHostInterject() {
       const had = state.pendingHostInterject;
@@ -99,6 +115,7 @@ export function createRoom({ id, title, hostName, agents, scheduling }) {
       state.spokeThisTurn.clear();
       state.turnBudget = maxBudget;
       state.pendingHostInterject = false;
+      state.aborted = false;
       state.turnSeq += 1;
     },
 

@@ -89,6 +89,11 @@ export function createChatService({
       // 先检查插话再检查预算：人类在预算耗尽的瞬间发言也必须被响应
       for (;;) {
         if (room.paused) break;
+        // 清空历史会中止当前回合，且不再基于空上下文继续生成
+        if (room.consumeAbort()) {
+          stopReason = 'cleared';
+          break;
+        }
         if (room.consumeHostInterject()) {
           room.resetTurn();
           turnRequested = false; // 本回合已接管，排队中的触发作废
@@ -140,7 +145,7 @@ export function createChatService({
       }
     } finally {
       room.setStatus('idle');
-      emit('turn_end', { reason: stopReason, budget: room.turnBudget });
+      emit('turn_end', { reason: stopReason, budget: room.turnBudget, paused: room.paused });
     }
   }
 
@@ -182,6 +187,8 @@ export function createChatService({
         content: parsed.content,
         meta: { next: parsed.next, degraded: parsed.degraded },
       });
+      // 回合已被清空操作中止时，丢弃这条在途发言，不写入空上下文的历史
+      if (room.aborted) return null;
       room.appendMessage(message);
       persist(message);
       room.markSpoke(agent.id);
@@ -201,6 +208,7 @@ export function createChatService({
 
   function clearHistory() {
     room.clear();
+    room.requestAbort(); // 中止进行中的回合，避免基于空上下文继续发言
     if (store) store.reset();
     emit('room_state', room.snapshot());
     emit('history_cleared', {});

@@ -242,3 +242,29 @@ test('配置了预算时仍然受预算约束（向后兼容）', async () => {
   assert.equal(end.payload.reason, 'budget');
   assert.equal(agentMessages(room).length, 3);
 });
+
+test('暂停中的回合结束时，状态仍是暂停而非待机', async () => {
+  const gate = createGate();
+  const llm = createFakeLlm({ gate });
+  const { service, room, events } = makeService({ llm });
+  const firstTurn = hostSay(service, '暂停语义测试');
+  while (llm.calls.decide.length === 0) await new Promise((r) => setImmediate(r));
+  service.setPaused(true);
+  gate.release();
+  const end = await firstTurn;
+  assert.equal(end.payload.paused, true, 'turn_end 必须带上真实暂停状态');
+  assert.equal(room.paused, true);
+});
+
+test('清空历史会中止进行中的回合，不再基于空上下文发言', async () => {
+  const gate = createGate();
+  const llm = createFakeLlm({ gate });
+  const { service, room, events } = makeService({ llm });
+  const firstTurn = hostSay(service, '清空中止测试');
+  while (llm.calls.decide.length === 0) await new Promise((r) => setImmediate(r));
+  service.clearHistory();
+  gate.release();
+  await firstTurn;
+  assert.equal(room.messages.length, 0, '清空后不得再有任何消息（含在途发言）');
+  assert.ok(events.some((e) => e.type === 'turn_end' && e.payload.reason === 'cleared'));
+});

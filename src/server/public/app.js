@@ -97,7 +97,8 @@ function handleEvent(event) {
       setRoomStatus({ status: 'discussing', paused: false });
       break;
     case 'turn_end':
-      setRoomStatus({ status: 'idle', paused: false, turnBudget: 0 });
+      // paused 以服务端为准：暂停中的回合结束时仍是"已暂停"，不能翻成"待机"
+      setRoomStatus({ status: 'idle', paused: event.payload.paused ?? false });
       for (const [id] of agentEls) setAgentStatus(id, 'idle');
       break;
     case 'error':
