@@ -24,7 +24,7 @@ function renderAgentRoster(agents) {
     agentMeta.set(a.id, a);
     const li = document.createElement('li');
     li.innerHTML = `
-      <div class="avatar" style="background:${a.color}">${esc(a.name[0])}<span class="dot" hidden></span></div>
+      <div class="avatar" style="background:${a.color};--lantern:${a.color}">${esc(a.name[0])}<span class="dot" hidden></span></div>
       <div><div class="who">${esc(a.name)}</div><div class="what">${esc(a.title)}</div></div>`;
     agentsEl.appendChild(li);
     agentEls.set(a.id, { li, dot: li.querySelector('.dot') });
@@ -62,11 +62,11 @@ function appendMessage(message) {
   const isSummary = message.meta?.summary === true;
   li.className = `msg ${isSummary ? 'summary' : message.kind === 'human' ? 'host' : 'agent'}`;
   const meta = agentMeta.get(message.speakerId);
-  const color = message.kind === 'human' ? '#7ee2a8' : isSummary ? 'transparent' : (meta?.color ?? '#8b93a7');
+  const color = message.kind === 'human' ? '#7ee2a8' : isSummary ? 'rgba(232,150,60,0.22)' : (meta?.color ?? '#8b93a7');
   const title = message.kind === 'human' ? '主持人' : isSummary ? '由本房讨论生成' : (meta?.title ?? '');
   const avatar = isSummary ? '📌' : esc(message.speakerName[0]);
   li.innerHTML = `
-    <div class="avatar" style="background:${color}">${avatar}</div>
+    <div class="avatar" style="background:${color};--lantern:${color}">${avatar}</div>
     <div>
       <div class="meta"><span class="name">${esc(message.speakerName)}</span><span>${esc(title)}</span><span>${new Date(message.createdAt).toLocaleTimeString('zh-CN', { hour12: false })}</span></div>
       <div class="bubble">${isSummary ? esc(message.content) : renderContent(message.content)}</div>

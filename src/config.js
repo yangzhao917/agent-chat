@@ -59,7 +59,7 @@ export function loadConfig(env = process.env) {
       decisionWindow: int(get('DECISION_HISTORY'), 16),
     },
     dataDir: get('DATA_DIR') || './data',
-    roomTitle: get('ROOM_TITLE') || '深夜茶馆 · 十人局',
+    roomTitle: get('ROOM_TITLE') || '围炉夜话',
     hostName: get('HOST_NAME') || '主持人',
   };
 }

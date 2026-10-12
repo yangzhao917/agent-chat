@@ -7,6 +7,9 @@
 - 设计基线（目标/范围/边界/验收标准）：[docs/plan.md](docs/plan.md)
 - 技术形态：零依赖 Node.js（ESM）+ 原生 `node:test`；OpenAI 兼容 LLM 接口；SSE 推送；JSONL 持久化。
 
+界面为“围炉夜话”主题：暖色深夜底、底部炉火光与上升火星、人设头像带各自颜色的灯笼辉光，
+动效遵循系统 `prefers-reduced-motion` 设置。
+
 ## 快速开始
 
 ```bash
@@ -38,6 +41,7 @@ npm test
 | `MAX_HISTORY` / `DECISION_HISTORY` | `30` / `16` | 发言/决策时下发的历史窗口 |
 | `MESSAGE_DELAY_MS` | `900` | 两条 Agent 消息间的节奏间隔 |
 | `DATA_DIR` | `./data` | JSONL 持久化目录 |
+| `ROOM_TITLE` | `围炉夜话` | 房间名（页面标题） |
 
 ## 架构
 

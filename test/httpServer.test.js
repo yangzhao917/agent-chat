@@ -42,7 +42,7 @@ test('GET / 返回聊天室页面', async () => {
     const res = await fetch(`${base}/`);
     assert.equal(res.status, 200);
     assert.match(res.headers.get('content-type'), /text\/html/);
-    assert.match(await res.text(), /多 Agent 群聊房间/);
+    assert.match(await res.text(), /围炉夜话 · 多 Agent 群聊/);
   });
 });
 

@@ -3,13 +3,44 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>多 Agent 群聊房间</title>
+  <title>围炉夜话 · 多 Agent 群聊</title>
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
+  <!-- 炉火氛围：底部火光 + 上升的火星（纯 CSS，不拦截点击） -->
+  <div class="fire-glow" aria-hidden="true"></div>
+  <div class="embers" aria-hidden="true">
+    <span style="left:8%;animation-duration:11s;animation-delay:0s"></span>
+    <span style="left:17%;animation-duration:14s;animation-delay:3s"></span>
+    <span style="left:26%;animation-duration:9s;animation-delay:6s"></span>
+    <span style="left:35%;animation-duration:13s;animation-delay:1.5s"></span>
+    <span style="left:44%;animation-duration:10s;animation-delay:8s"></span>
+    <span style="left:53%;animation-duration:15s;animation-delay:4.5s"></span>
+    <span style="left:62%;animation-duration:12s;animation-delay:2s"></span>
+    <span style="left:71%;animation-duration:9.5s;animation-delay:7s"></span>
+    <span style="left:80%;animation-duration:13.5s;animation-delay:5s"></span>
+    <span style="left:89%;animation-duration:11.5s;animation-delay:9s"></span>
+    <span style="left:95%;animation-duration:14.5s;animation-delay:3.8s"></span>
+    <span style="left:48%;animation-duration:16s;animation-delay:10s"></span>
+  </div>
+
   <header class="topbar">
     <div class="room-info">
-      <h1 id="room-title">群聊房间</h1>
+      <svg class="flame" viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
+        <defs>
+          <linearGradient id="flameGrad" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0" stop-color="#c9421a" />
+            <stop offset=".55" stop-color="#f08a2e" />
+            <stop offset="1" stop-color="#ffd479" />
+          </linearGradient>
+        </defs>
+        <path fill="url(#flameGrad)" d="M16 1.5c1.2 5.4-4.4 7-6.4 11.2C8.1 15.7 7.8 17.7 7.8 19.6a8.2 8.2 0 0 0 16.4 0c0-3.4-1.7-5.5-3.4-7.6-1.5-1.9-2.8-4.3-4.8-10.5z" />
+        <path fill="#ffe9b8" opacity=".9" d="M16.6 13.6c.9 2.9-2.6 3.7-3.5 5.9-.6 1.3-.3 2.6.6 3.5.9.8 2.2.9 3.2.3 1.1-.8 1.4-2.2 1-3.4-.4-1-1.4-1.8-1.3-6.3z" />
+      </svg>
+      <div class="room-titles">
+        <h1 id="room-title">围炉夜话</h1>
+        <p class="room-sub">十位朋友 · 一炉火 · 自主开聊</p>
+      </div>
       <span id="room-status" class="status" hidden>讨论中</span>
     </div>
     <div class="controls">
@@ -23,20 +54,21 @@
     <section class="chat">
       <ol id="messages" class="messages" aria-live="polite"></ol>
       <div class="composer-top">
-        <button id="btn-summary" class="btn" type="button" hidden>总结讨论</button>
+        <button id="btn-summary" class="btn ghost" type="button" hidden>总结讨论</button>
       </div>
       <form id="composer" class="composer">
-        <input id="input" type="text" placeholder="以主持人身份说点什么，Agent 们会自己决定谁接话…" maxlength="500" autocomplete="off" />
+        <input id="input" type="text" placeholder="围炉夜话，说点什么……" maxlength="500" autocomplete="off" />
         <button type="submit" class="btn primary">发送</button>
       </form>
     </section>
 
     <aside class="sidebar">
-      <h2>房间成员 <span id="agent-count" class="muted"></span></h2>
+      <h2>围炉的人 <span id="agent-count" class="muted"></span></h2>
       <ul id="agents" class="agents"></ul>
       <div class="legend">
-        <h3>规则</h3>
-        <p>每条消息后，10 位 Agent 各自判断是否想接话；上一位发言者的提名优先，否则按发言意愿加权随机。房间不设待机：没人想发言时也会自动接话，只有暂停、清空或配置预算才能让它停下。</p>
+        <h3>夜话规则</h3>
+        <p>每条消息后，十位各自判断是否想接话；上一位发言者的提名优先，否则按发言意愿加权随机。</p>
+        <p>夜话不设散场：没人想发言时也会自动接话，只有暂停、清空或配置预算才能让炉火静下来。</p>
       </div>
     </aside>
   </main>
