@@ -201,14 +201,8 @@ export function createChatService({
     emit('agent_status', { agentId: agent.id, status: 'speaking' });
     try {
       const context = conversationHistory(history.max);
-      // 流式发言：推理增量实时推给前端，缩短"等待一句话"的感知时间。
-      // 推理内容只是观感附属物——不落盘、不入历史、不进任何 Agent 的上下文。
-      const raw = await llm.speakStream(
+      const raw = await llm.speak(
         buildSpeechMessages({ agent, history: context, roster: rosterSummary(room.agents), evidenceRequired: isEvidenceRequired() }),
-        {
-          onReasoning: (delta) => emit('agent_reasoning', { agentId: agent.id, delta }),
-          onRestart: () => emit('agent_reasoning', { agentId: agent.id, reset: true }),
-        },
       );
       const parsed = parseSpeech(raw, { roster: room.agents });
       if (!parsed) throw new Error('发言输出无法解析');

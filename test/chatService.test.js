@@ -60,14 +60,14 @@ test('共享聊天记录：每次发言的提示词都包含此前全部关键�
   const llm = createFakeLlm();
   const { service, room } = makeService({ llm });
   await hostSay(service, '起点话题：周末去哪玩？');
-  assert.ok(llm.calls.speakStream.length >= 2);
-  for (const call of llm.calls.speakStream) {
+  assert.ok(llm.calls.speak.length >= 2);
+  for (const call of llm.calls.speak) {
     const userPrompt = call.messages.find((m) => m.role === 'user').content;
     assert.ok(userPrompt.includes('起点话题：周末去哪玩？'), '人类消息必须进入每个 Agent 的上下文');
     assert.ok(userPrompt.includes('林晚舟') && userPrompt.includes('郑板儿'), '名册必须下发');
   }
   // 后发言者能看到先发言者的内容
-  const lastCall = llm.calls.speakStream.at(-1);
+  const lastCall = llm.calls.speak.at(-1);
   const userPrompt = lastCall.messages.find((m) => m.role === 'user').content;
   assert.ok(userPrompt.includes(speakers(room)[0]), '后发言者上下文包含第一位 Agent 的发言');
 });
@@ -158,7 +158,7 @@ test('被选中者发言失败：跳过并继续，连续失败 3 次才中止�
 
 test('发言输出无法解析时同样降级跳过', async () => {
   const llm = createFakeLlm();
-  llm.speakStream = async () => '完全不是 JSON 也没有内容';
+  llm.speak = async () => '完全不是 JSON 也没有内容';
   const { service, room } = makeService({ llm });
   await hostSay(service, '坏输出');
   // 纯文本降级为发言内容而非跳过（parseSpeech 的降级路径）
@@ -272,18 +272,18 @@ test('有目标的讨论会向 Agent 注入循证要求，自由讨论不会', a
   const { service } = makeService({ llm });
 
   await hostSay(service, '有依据吗：远程办公能提升多少产出？');
-  const targetedSpeech = llm.calls.speakStream[0].messages.map((m) => m.content).join('\n');
+  const targetedSpeech = llm.calls.speak[0].messages.map((m) => m.content).join('\n');
   assert.match(targetedSpeech, /事实与数据纪律/, '有目标讨论必须要求引用可核查来源');
   const targetedDecision = llm.calls.decide[0].messages.map((m) => m.content).join('\n');
   assert.match(targetedDecision, /有数据或可靠依据可以补充/);
 
   // 切到自由讨论：提示词里不应再出现循证要求
-  llm.calls.speakStream.length = 0;
+  llm.calls.speak.length = 0;
   const done = new Promise((resolve) => service.subscribe((e) => e.type === 'turn_end' && resolve(e)));
   service.postHostMessage('大家随便聊', { mode: 'free' });
   await done;
-  assert.ok(llm.calls.speakStream.length > 0);
-  for (const call of llm.calls.speakStream) {
+  assert.ok(llm.calls.speak.length > 0);
+  for (const call of llm.calls.speak) {
     const prompt = call.messages.map((m) => m.content).join('\n');
     assert.ok(!prompt.includes('事实与数据纪律'), '自由讨论不得注入循证要求');
   }
@@ -293,7 +293,7 @@ test('总结讨论：生成系统消息入历史，但不参与后续 Agent 上�
   const llm = createFakeLlm();
   const { service, room, events } = makeService({ llm });
   await hostSay(service, '总结测试话题');
-  const before = llm.calls.speakStream.length;
+  const before = llm.calls.speak.length;
 
   const summary = await service.summarizeDiscussion();
   assert.equal(summary.kind, 'system');
@@ -304,7 +304,7 @@ test('总结讨论：生成系统消息入历史，但不参与后续 Agent 上�
 
   // 再触发一轮：Agent 的上下文里不应出现总结内容
   await hostSay(service, '继续讨论');
-  const laterPrompts = llm.calls.speakStream.slice(before + 1).map((c) => c.messages.map((m) => m.content).join('\n'));
+  const laterPrompts = llm.calls.speak.slice(before + 1).map((c) => c.messages.map((m) => m.content).join('\n'));
   assert.ok(laterPrompts.length > 0);
   for (const p of laterPrompts) {
     assert.ok(!p.includes(summary.content), '总结是派生记录，不得进入 Agent 上下文');
@@ -325,65 +325,4 @@ test('总结不影响调度：不改变上一句发言人与提名', async () =>
   assert.equal(room.lastSpeakerId, lastAgentBefore.speakerId, '总结不得抢占发言权');
   const eligible = room.eligibleAgents().map((a) => a.id);
   assert.ok(!eligible.includes(lastAgentBefore.speakerId), '禁连庄规则不受总结影响');
-});
-
-test('发言过程的思考增量实时透出，但不进入历史与持久化', async () => {
-  const llm = createFakeLlm({ reasonings: new Map([['林晚舟', ['这段数据', '值得再核一遍']]]) });
-  const { service, room, events } = makeService({ llm });
-  const reasoning = [];
-  service.subscribe((e) => {
-    if (e.type === 'agent_reasoning') reasoning.push(e.payload);
-  });
-
-  await hostSay(service, '远程办公真的高效吗');
-
-  // 思考增量按序透出，且都归属当时正在发言的那个 Agent
-  const deltas = reasoning.filter((p) => !p.reset).map((p) => p.delta);
-  assert.deepEqual(deltas, ['这段数据', '值得再核一遍']);
-  assert.ok(reasoning.length > 0 && reasoning.every((p) => p.agentId === 'lin-wanzhou'));
-  assert.ok(llm.calls.speakStream.length > 0, '发言必须走流式路径，否则思考无法实时透出');
-
-  // 思考只是观感附属物：不落库、不入历史、不影响正式消息
-  assert.equal(agentMessages(room).length, 10);
-  for (const m of room.messages) {
-    assert.ok(!m.content.includes('这段数据'), '思考内容不得混入正式消息');
-    assert.ok(!m.meta?.reasoning, '消息元数据不得携带思考内容');
-  }
-  const persisted = events.filter((e) => e.type === 'message').map((e) => e.payload);
-  assert.ok(persisted.every((m) => !m.content.includes('值得再核一遍')));
-});
-
-test('配额扩容重试时会发出 reset，让前端作废已显示的半段思考', async () => {
-  const llm = createFakeLlm({
-    reasonings: new Map([['林晚舟', ['第一次思考']]]),
-    streamRestarts: new Set(['林晚舟']),
-  });
-  const { service } = makeService({ llm });
-  const payloads = [];
-  service.subscribe((e) => {
-    if (e.type === 'agent_reasoning') payloads.push(e.payload);
-  });
-
-  await hostSay(service, '扩容重试的思考');
-
-  assert.ok(payloads.some((p) => p.reset === true && p.agentId === 'lin-wanzhou'), '扩容重试必须通知前端丢弃半段思考');
-});
-
-test('发言失败时也要收尾：不留下没有正式消息对应的思考气泡', async () => {
-  const llm = createFakeLlm({
-    reasonings: new Map([['林晚舟', ['想了一半就失败了']]]),
-    speakThrows: new Set(['all']),
-  });
-  const { service, room, events } = makeService({ llm });
-  await hostSay(service, '全员发言失败');
-
-  assert.equal(agentMessages(room).length, 0);
-  // 服务端不持久化任何思考；前端靠 message/turn_end 事件清理气泡，
-  // 这里锁定"失败路径上思考事件与正式消息一一对应地被中止"这一契约
-  const reasoningAgents = new Set(events.filter((e) => e.type === 'agent_reasoning').map((e) => e.payload.agentId));
-  const spokenAgents = new Set(room.messages.filter((m) => m.kind === 'agent').map((m) => m.speakerId));
-  for (const id of reasoningAgents) {
-    assert.ok(!spokenAgents.has(id), '发言失败的 Agent 不得留下任何正式消息');
-  }
-  assert.ok(events.some((e) => e.type === 'turn_end'), '回合必须正常收尾');
 });
